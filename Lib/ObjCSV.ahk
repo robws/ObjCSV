@@ -1406,7 +1406,6 @@ CheckEolReplacement(strData, strEolReplacement, ByRef strEol)
 }
 
 
-
 GetEolCharacters(strData)
 ; search to detect the first end-of-lines character(s) detected in the string (in the order "`r`n", "`n", "`r"). Returns empty if none is found.
 {
@@ -1415,6 +1414,73 @@ GetEolCharacters(strData)
 		if InStr(strData, A_LoopField)
 			return A_LoopField
 	return := "" ; return empty if no end-of-line detected
+}
+
+;/* ===MARKDOWN FUNCTIONS=== */
+csvToMarkdown(sIn) {
+
+	strFields := ""
+	concat=
+	obj := ObjCSV_Text2Collection(sIn, strFields)
+	if !obj.MaxIndex() {
+		return "Object is Empty" ; object is empty
+	} else
+	{
+		strHead=
+		strAlign=
+	for strFieldName, strFieldValue in obj[1] 
+	{
+		strHead:= strHead . "|" . strFieldName 
+		strAlign := strAlign . "|---"
+	}			
+		strHead=%strHead%|`r`n
+		strAlign=%strAlign%|`r`n
+		Loop, % obj.MaxIndex() ; loop in each record in the obj object
+		{
+			intRecordNumber := A_Index
+			
+			for strFieldName, strFieldValue in obj[intRecordNumber] ; loop each field in the record
+				str := str . "|" . strFieldValue
+			concat=%concat%%str%|`r`n
+			str=
+		}
+		md=%strHead%%strAlign%%concat%
+		return md
+			
+	}
+}
+tabToMarkdown(sIn) {
+	
+	strFields := ""
+	concat=
+	obj := ObjCSV_Text2Collection(sIn, strFields,,,,strFieldDelimiter := "`t")
+	
+	if !obj.MaxIndex() {
+		return "Object is Empty" ; object is empty
+	} else
+	{
+		strHead=
+		strAlign=
+	for strFieldName, strFieldValue in obj[1] 
+	{
+		strHead:= strHead . "|" . strFieldName 
+		strAlign := strAlign . "|---"
+	}			
+		strHead=%strHead%|`r`n
+		strAlign=%strAlign%|`r`n
+		Loop, % obj.MaxIndex() ; loop in each record in the obj object
+		{
+			intRecordNumber := A_Index
+			
+			for strFieldName, strFieldValue in obj[intRecordNumber] ; loop each field in the record
+				str := str . "|" . strFieldValue
+			concat=%concat%%str%|`r`n
+			str=
+		}
+		md=%strHead%%strAlign%%concat%
+		return md
+			
+	}
 }
 
 
