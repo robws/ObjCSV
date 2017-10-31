@@ -231,6 +231,142 @@ ObjCSV_CSV2Collection(strFilePath, ByRef strFieldNames, blnHeader := 1, blnMulti
 	return objCollection
 }
 ;================================================
+ObjCSV_Text2Collection(strData, ByRef strFieldNames, blnHeader := 1, blnMultiline := 1, intProgressType := 0
+	, strFieldDelimiter := ",", strEncapsulator := """", strEolReplacement := "", strProgressText := "")
+/*!
+	Function: ObjCSV_Text2Collection(strFilePath, ByRef strFieldNames [, blnHeader = 1, blnMultiline = 1, intProgressType = 0, strFieldDelimiter = ",", strEncapsulator = """", strEolReplacement = "", strProgressText := "", ByRef strFileEncoding := ""])
+		Transfer the content of a variable containing a delimited file to a collection of objects. Field names are taken from the first line of
+		the file or from the strFieldNameReplacement parameter. If taken from the file, fields names are returned by
+		the ByRef variable strFieldNames. Delimiters are configurable.
+
+	Parameters:
+		strFilePath - Path of the file to load, which is assumed to be in A_WorkingDir if an absolute path isn't specified.
+		strFieldNames - (ByRef) Input: Names for object keys if blnHeader if false. Names must appear in the same order as they appear in the file, separated by the strFieldDelimiter character (see below). If names are not provided and blnHeader is false, "C" + column numbers are used as object keys, starting at 1, and strFieldNames will return the "C" names. Empty by default. Output: See "Returns:" below.
+		blnHeader - (Optional) If true (or 1), the objects key names are taken from the header of the CSV file (first line of the file). If blnHeader if false (or 0), the first line is considered as data (see strFieldNames). True (or 1) by default.
+		blnMultiline - (Optional) If true (or 1), multi-line fields are supported. Multi-line fields include line breaks (end-of-line characters) which are usualy considered as delimiters for records (lines of data). Multi-line fields must be enclosed by the strEncapsulator character (usualy double-quote, see below). True by default. NOTE-1: If you know that your CSV file does NOT include multi-line fields, turn this option to false (or 0) to allow handling of larger files and improve performance (RegEx experts, help needed! See the function code for details). NOTE-2: If blnMultiline is True, you can use the strEolReplacement parameter to specify a character (or string) that will be converted to line-breaks if found in the CSV file.
+		intProgressType - (Optional) If 1, a progress bar is displayed. If -1, -2 or -n, the part "n" of the status bar is updated with the progress in percentage. See also strProgressText below. By default, no progress bar or status (0).
+		strFieldDelimiter - (Optional) Field delimiter in the CSV file. One character, usually comma (default value) or tab. According to locale setting of software (e.g. MS Office) or user preferences, delimiter can be semi-colon (;), pipe (|), space, etc. NOTE-1: End-of-line characters (`n or `r) are prohibited as field separator since they are used as record delimiters. NOTE-2: Using the Trim function, %A_Space% and %A_Tab% (when tab is not a delimiter) are removed from the beginning and end of all field names (but not of data since v0.5.6).
+		strEncapsulator - (Optional) Character (usualy double-quote) used in the CSV file to embed fields that include at least one of these special characters: line-breaks, field delimiters or the encapsulator character itself. In this last case, the encapsulator character must be doubled in the string. For example: "one ""quoted"" word". All fields and headers in the CSV file can be encapsulated, if desired by the file creator. Double-quote by default.
+		strEolReplacement - (Optional) Character (or string) that will be converted to line-breaks if found in the CSV file. Replacements occur only when blnMultiline is True. Empty by default.
+		strProgressText - (Optional) Text to display in the progress bar or in the status bar. For status bar progress, the string "##" is replaced with the percentage of progress. See also intProgressType above. Empty by default.
+		strFileEncoding - (ByRef, Optional) File encoding: ANSI, UTF-8, UTF-16, UTF-8-RAW, UTF-16-RAW or CPnnnn (nnnn being a code page numeric identifier - see [https://autohotkey.com/docs/commands/FileEncoding.htm](https://autohotkey.com/docs/commands/FileEncoding.htm). Empty by default (using current encoding). If a literal value or a filled variable is passed as parameter, this value is used to set reading encoding. If an empty variable is passed to the ByRef parameter, the detected file encoding is returned in the ByRef variable.
+
+	Returns:
+		This functions returns an object that contains an array of objects. This collection of objects can be viewed as a table in a database. Each object in the collection is like a record (or a line) in a table. These records are, in fact, associative arrays which contain a list key-value pairs. Key names are like field names (or column names) in the table. Key names are taken in the header of the CSV file, if it exists. Keys can be strings or integers, while values can be of any type that can be expressed as text. The records can be read using the syntax obj[1], obj[2] (...). Field values can be read using the syntax obj[1].keyname or, when field names contain spaces, obj[1]["key name"]. The "Loop, Parse" and "For key, value in array" commands allow to easily browse the content of these objects.
+		
+		If blnHeader is true (or 1), the ByRef parameter strFieldNames returns a string containing the field names (object keys) read from the first line of the CSV file, in the format and in the order they appear in the file. If a field name is empty, it is replaced with "Empty_" and its field number.  If a field name is duplicated, the field number is added to the duplicate name.  If blnHeader is false (or 0), the value of strFieldNames is unchanged by the function except if strFieldNames is empty. In this case, strFieldNames will return the "C" field names created by this function.
+		
+		If an empty variable is passed to the ByRef parameter strFileEncoding, returns the detected file encoding.
+
+		At the end of execution, the function sets ErrorLevel to: 0 No error / 1 Out of memory / 2 Memory limit / 3 No unused character for replacement (returned by sub-function Prepare4Multilines) / 255 Unknown error. If the function produces an "Memory limit reached" error, increase the #MaxMem value (see the help file).
+*/
+{
+	objCollection := Object() ; object that will be returned by the function (a collection or array of objects)
+	objHeader := Object() ; holds the keys (fields name) of the objects in the collection
+
+	if blnMultiline
+	{
+		chrEolReplacement := Prepare4Multilines(strData, strEncapsulator, intProgressType, strProgressText . " (1/2)")
+			; replace `n (but keep the `r) to make sure each record temporarily stands on a single line *** not tested on Unix files
+		if (ErrorLevel)
+		{
+			if (intProgressType)
+				ProgressStop(intProgressType)
+			return
+		}
+	}
+	strData := Trim(strData, "`r`n")
+		; remove empty line (record) at the beginning or end of the string, if present *** not tested on Unix files
+	if (intProgressType)
+	{
+		intMaxProgress := StrLen(strData)
+		intProgressBatchSize := ProgressBatchSize(intMaxProgress)
+		intProgressIndex := 0
+		intProgressThisBatch := 0
+		if blnMultiline
+			strProgressText := strProgressText . " (2/2)"
+		ProgressStart(intProgressType, intMaxProgress, strProgressText)
+	}
+	Loop, Parse, strData, `n, `r ; read each line (record) of the CSV file
+	{
+		; StringReplace, strThisLine, A_LoopField, % "=" . strEncapsulator, %strEncapsulator%, All ; reverse edit from v0.4.1 (see git for details)
+		intProgressIndex := intProgressIndex + StrLen(A_LoopField) + 2
+		intProgressThisBatch := intProgressThisBatch + StrLen(A_LoopField) + 2
+			; augment intProgressIndex of len of line + 2 for cr-lf
+		if (intProgressType AND (intProgressThisBatch > intProgressBatchSize))
+		{
+			ProgressUpdate(intProgressType, intProgressIndex, intMaxProgress, strProgressText)
+				; update progress bar only every %intProgressBatchSize% records
+			intProgressThisBatch := 0
+		}
+		if (A_Index = 1) and (blnHeader) ; we have an header to read
+		{
+			objHeader := ObjCSV_ReturnDSVObjectArray(A_LoopField, strFieldDelimiter, strEncapsulator)
+				; returns an object array from the first line of the delimited-separated-value file
+			strFieldNamesMatchList := strFieldDelimiter
+			Loop, % objHeader.MaxIndex() ; check if fields names are empty or duplicated
+			{
+				if !StrLen(objHeader[A_Index]) ; field name is empty
+					objHeader[A_Index] := "Empty_" . A_Index ; use field number as field name
+				else
+					if InStr(strFieldNamesMatchList, strFieldDelimiter . objHeader[A_Index] . strFieldDelimiter)
+						; field name is duplicate
+						objHeader[A_Index] := objHeader[A_Index] . "_" . A_Index ; add field number to field name
+				strFieldNamesMatchList := strFieldNamesMatchList . objHeader[A_Index] . strFieldDelimiter
+			}
+			strFieldNames := ""
+			for intIndex, strFieldName in objHeader ; returns the updated field names to the ByRef parameter
+				strFieldNames := strFieldNames . ObjCSV_Format4CSV(strFieldName, strFieldDelimiter, strEncapsulator)
+					. strFieldDelimiter
+			StringTrimRight, strFieldNames, strFieldNames, 1 ; remove extra field delimiter
+			if !(objHeader.MaxIndex()) ; we don't have an object, something went wrong
+			{
+				if (intProgressType)
+					ProgressStop(intProgressType)
+				ErrorLevel := 255 ; Unknown error
+				return ; returns no object
+			}
+		}
+		else
+		{
+			if (A_Index = 1)
+			{
+				; If we get here, bnHeader is false so there is no header in the CSV file
+				if !StrLen(strFieldNames)
+					; We must build the header
+				{
+					for intIndex, strFieldData in ObjCSV_ReturnDSVObjectArray(A_LoopField, strFieldDelimiter, strEncapsulator, false)
+						strFieldNames := strFieldNames . (StrLen(strFieldNames) ? strFieldDelimiter : "") . "C" . A_Index
+							; build strFieldNames to use as header and to return to caller
+					objHeader := ObjCSV_ReturnDSVObjectArray(strFieldNames, strFieldDelimiter, strEncapsulator)
+				}
+				; We have values in strFieldNames. Get field names from strFieldNames.
+				objHeader := ObjCSV_ReturnDSVObjectArray(strFieldNames, strFieldDelimiter, strEncapsulator)
+					; returns an object array from the delimited-separated-value strFieldNames string
+			}
+			objData := Object() ; object of one record in the collection
+			for intIndex, strFieldData in ObjCSV_ReturnDSVObjectArray(A_LoopField, strFieldDelimiter, strEncapsulator, false)
+				; returns an object array from each line of the delimited-separated-value file
+			{
+				if blnMultiline
+				{
+					StringReplace, strFieldData, strFieldData, %chrEolReplacement%, `n, 1
+						; put back all original `n in each field, if present
+					StringReplace, strFieldData, strFieldData, %strEolReplacement%, `r`n, 1
+						; replace all user-supplied replacement character with end-of-line (`r`n), if present *** not tested on Unix files
+				}
+				objData[objHeader[A_Index]] := strFieldData ; we always have field names in objHeader[A_Index]
+			}
+			objCollection.Insert(objData) ; add the object (record) to the collection
+		}
+	}
+	if (intProgressType)
+		ProgressStop(intProgressType)
+	objHeader := ; release object
+	ErrorLevel := 0
+	return objCollection
+}
+;================================================
 
 
 
@@ -497,6 +633,45 @@ ObjCSV_Collection2HTML(objCollection, strFilePath, strTemplateFile, strTemplateE
 	strTemplateRow :=  SubStr(strTemplate, 1, intPos - 1) ; extract row template
 	strTemplate :=  SubStr(strTemplate, intPos + 7) ; remove row template from template string
 	strTemplateFooter := strTemplate ; remaining of the template string is the footer template
+	strData := MakeHTMLHeaderFooter(strTemplateHeader, strFilePath, strTemplateEncapsulator)
+		; replace variables in the header template and initialize the HTML data string
+	intMax := objCollection.MaxIndex()
+	if (intProgressType)
+	{
+		intProgressBatchSize := ProgressBatchSize(intMax)
+		ProgressStart(intProgressType, intMax, strProgressText)
+	}
+	if (blnOverwrite)
+		FileDelete, %strFilePath% ; delete existing file if present, no error if missing
+	Loop, %intMax% ; for each record in the collection
+	{
+		if !Mod(A_Index, intProgressBatchSize) ; update progress bar and save every %intProgressBatchSize% records
+		{
+			if (intProgressType)
+				ProgressUpdate(intProgressType, A_index, intMax, strProgressText)
+			If !SaveBatch(strData, strFilePath, intProgressType, strFileEncoding)
+				return
+			strData := ""
+		}
+		strData := strData . MakeHTMLRow(strTemplateRow, objCollection[A_Index], A_Index, strTemplateEncapsulator) 
+			. "`r`n" ; replace variables in the row template and append to the HTML data string
+	}
+	strData := strData . MakeHTMLHeaderFooter(strTemplateFooter, strFilePath, strTemplateEncapsulator)
+		; replace variables in the footer template and append to the HTML data string
+	If !SaveBatch(strData, strFilePath, intProgressType, strFileEncoding)
+		return
+	if (intProgressType)
+		ProgressStop(intProgressType)
+	ErrorLevel := 0
+	return
+}
+	/**
+	* @name ObjCSV_Collection2Markdown
+	* @function
+	* @description
+	*/
+ObjCSV_Collection2Markdown(objCollection, intProgressType := 0, strProgressText := "")
+{
 	strData := MakeHTMLHeaderFooter(strTemplateHeader, strFilePath, strTemplateEncapsulator)
 		; replace variables in the header template and initialize the HTML data string
 	intMax := objCollection.MaxIndex()
