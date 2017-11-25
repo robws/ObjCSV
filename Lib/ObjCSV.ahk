@@ -1483,7 +1483,48 @@ tabToMarkdown(sIn) {
 	}
 }
 
+/**
+	* @name delimToMarkdown
+	* @function arbitrary delimiter to markdown
+	* @description
+	*/
+delimToMarkdown(sIn,sFieldDelim) {
+	
+	strFields := ""
+	concat=
+	obj := ObjCSV_Text2Collection(sIn, strFields,,,,strFieldDelimiter := sFieldDelim)
+	
+	if !obj.MaxIndex() {
+		return "Object is Empty" ; object is empty
+	} else
+	{
+		strHead=
+		strAlign=
+	for strFieldName, strFieldValue in obj[1] 
+	{
+		strHead:= strHead . "|" . strFieldName 
+		strAlign := strAlign . "|---"
+	}			
+		strHead=%strHead%|`r`n
+		strAlign=%strAlign%|`r`n
+		Loop, % obj.MaxIndex() ; loop in each record in the obj object
+		{
+			intRecordNumber := A_Index
+			
+			for strFieldName, strFieldValue in obj[intRecordNumber] ; loop each field in the record
+				str := str . "|" . strFieldValue
+			concat=%concat%%str%|`r`n
+			str=
+		}
+		md=%strHead%%strAlign%%concat%
+		return md
+			
+	}
+}
+eqToMarkdown(sIn) {
 
+return delimToMarkdown(sIn,"=") 
+}
 /*
 IsBOM(ByRef str)
 ; Based on HotKeyIt (https://autohotkey.com/board/topic/93295-dynarun/#entry592328)
