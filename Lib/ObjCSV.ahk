@@ -72,7 +72,11 @@
 */
 
 
-;================================================
+/**
+	* @name ObjCSV_CSV2Collection
+	* @function
+	* @description
+	*/
 ObjCSV_CSV2Collection(strFilePath, ByRef strFieldNames, blnHeader := 1, blnMultiline := 1, intProgressType := 0
 	, strFieldDelimiter := ",", strEncapsulator := """", strEolReplacement := "", strProgressText := "", ByRef strFileEncoding := "")
 /*!
